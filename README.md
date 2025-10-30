@@ -1,81 +1,150 @@
-# sqlite-editor
-A fast, minimal terminal UI (TUI) viewer/editor for SQLite databases written in Rust. It uses ratatui for rendering, crossterm for input, and rusqlite for database access.
+# Sqlite‑TUI
 
-Overview
-- Left pane: list of tables
-- Right pane: paginated rows of the selected table
-- Inline cell editing (rowid-backed tables)
-- Asynchronous DB worker keeps the UI responsive
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Made with Rust](https://img.shields.io/badge/Made%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 
-Install
-Prerequisites:
-- Rust toolchain (stable)
+Sqlite‑TUI (binary: `sqlite-editor`) is a fast, keyboard‑first terminal UI for browsing and editing SQLite databases — smooth scrolling, inline edits, and streamlined workflows.
 
-From source:
-- Clone this repository
-- Build and run:
-  - Debug: cargo run -- <DB_PATH>
-  - Release: cargo build --release
-  - Install locally: cargo install --path .
+<p align="center">
+✨ Idea or bug? <strong><a href="https://github.com/Firstp1ck/Sqlite-TUI/issues">Open an issue</a></strong>.<br/>
+❤️ Thank you to the community for your ideas, reports, and support!
+</p>
 
-Usage
-sqlite-editor [OPTIONS] <DB_PATH>
-Options:
-- -n, --page-size <NUM>  Rows per page (default: 200)
-- -h, --help             Show help
+## Table of Contents
+- [Quick start](#quick-start)
+- [Features](#features)
+- [Usage](#usage)
+  - [Handy shortcuts](#handy-shortcuts)
+- [Troubleshooting](#troubleshooting)
+- [Roadmap](#roadmap)
+- [Credits](#credits)
+- [License](#license)
 
-Examples:
-- cargo run -- /path/to/database.db
-- cargo run -- -n 500 /path/to/database.db
-- If your path starts with a dash, insert “--” to end option parsing:
-  - cargo run -- -- --/weird/path.db
+## Quick start
+- Install (from source, debug):
+```bash
+git clone https://github.com/Firstp1ck/Sqlite-TUI
+cd Sqlite-TUI
+cargo run -- ./path/to/your.db
+```
 
-Key bindings
+- Build (release) and run:
+```bash
+cargo build --release
+./target/release/sqlite-editor ./path/to/your.db
+```
+
+- Optional: install locally
+```bash
+cargo install --path .
+sqlite-editor ./path/to/your.db
+```
+
+- CLI help:
+```bash
+sqlite-editor -h
+# SQLite3 TUI Editor
+# Usage: sqlite-editor [OPTIONS] <DB_PATH>
+# Options:
+#   -n, --page-size <NUM>  Rows per page (default: 200)
+```
+
+## Features
+- Fast, smooth browsing
+  - Large tables feel responsive with in‑window smooth scrolling
+  - Left pane: tables; Right pane: rows of the selected table
+- Inline editing
+  - Live, inline cell edits with a visible cursor while typing
+  - Supports setting NULL quickly; undo the last change
+- Powerful filter & sort
+  - Case‑insensitive substring filter across all columns
+  - Cycle sort on the selected column; toggle ascending/descending
+- Copy & export that just works
+  - Copy cell, row, or the current page (TSV) to clipboard, with file fallback
+  - Export CSV for the current table (respects filter/sort)
+- Flexible layout
+  - Adjustable column widths; autosize one or all columns
+  - Optional cell viewer pane for full wrapped content
+- Clear UX
+  - Concise keybinds overlay
+  - Focus switching between panes
+  - Redraws only on state change or tick for a snappy feel
+
+## Usage
+1. Start the app with `sqlite-editor /path/to/db.sqlite`.
+2. Use the Tables pane (left) to pick a table (↑/↓, Enter).
+3. Navigate rows/columns in the Data pane (right).
+4. Press `e` to edit a cell, `Enter` to save, or `Esc` to cancel.
+5. Press `?` anytime to see keybinds. Press `/` to filter. Use `s`/`S` to sort.
+6. Copy page/row/cell or export CSV as needed.
+
+### Handy shortcuts
 - Global
-  - q: Quit
-  - r: Reload current table
-- Tables (left pane)
-  - Up/Down: Move selection
-  - Enter: Load selected table (page 1)
-- Data (right pane)
-  - Left/Right: Move column
-  - Up/Down or k/j: Move row
-  - PageUp/PageDown: Previous/Next page
-  - e: Edit current cell
-  - Enter (in edit mode): Save change
-  - Esc (in edit mode): Cancel
+  - `q` Quit
+  - `r` Reload current table
+  - `?` Toggle keybinds
+  - `Tab` Switch focus (Tables ⇄ Data)
+- Tables
+  - `Up/Down` Move selection
+  - `Enter` Open selected table
+- Data navigation
+  - `Left/Right` Move column
+  - `Up/Down` or `j/k` Move row
+  - `PageUp/PageDown` Previous/Next page
+- Editing
+  - `e` Edit cell
+  - `Enter` Save
+  - `Esc` Cancel
+  - `Ctrl+d` Set NULL
+  - `u` Undo last change (per table, last change in this session)
+- Filter
+  - `/` Begin filter input
+  - `Enter` Apply filter
+  - `Esc` Clear filter (also works in normal mode)
+- Sorting
+  - `s` Cycle sort column (based on current selection)
+  - `S` Toggle sort direction (Asc/Desc)
+- Copy & export
+  - `c` Copy current cell (TSV)
+  - `C` Copy current row (TSV)
+  - `Ctrl+C` Copy current page (TSV)
+  - `E` Export CSV (respects filter/sort)
+- Width & viewer
+  - `+` or `=` Wider column
+  - `-` or `_` Narrower column
+  - `a` Autosize current column
+  - `A` Autosize all columns
+  - `v` Toggle cell viewer pane
 
-Features (current)
-- Open a SQLite database file
-- Browse tables in the schema (sqlite_internal tables hidden)
-- Paginated table view using LIMIT/OFFSET
-- Inline cell editing using rowid (safe, simple path)
-- Basic type handling for edits (int/real/text); blobs shown as hex
-- Responsive UI by delegating DB operations to a worker thread
+## Troubleshooting
+- Edits don’t save
+  - Editing requires a `rowid`-backed table. Editing the `__rowid__` column itself is not supported.
+  - Tables created WITHOUT ROWID are not yet supported for inline edits/undo.
+- Clipboard copy doesn’t work
+  - The app tries several clipboard tools. Install one:
+    - Wayland: `wl-clipboard` (wl-copy)
+    - X11: `xclip` or `xsel`
+    - macOS: `pbcopy`
+    - Windows: built-in `clip`
+  - If none is found, the app writes content to a temp file and shows its path.
+- Paths starting with a dash
+  - Use `--` before the DB path, e.g. `sqlite-editor -- --/path/starting/with/dash.db`.
+- UI feels busy or cramped
+  - Close overlays (`?`) or the cell viewer (`v`), or reduce visible rows with `-n`.
 
-Limitations (for now)
-- Edits require rowid-backed tables; without-rowid tables and composite primary-key updates aren’t implemented yet
-- COUNT(*) for total rows may be slow on very large tables; it’s best-effort
-- No filters, sorting, or search yet
-- No schema editor (add/rename/drop columns, indexes)
-- Editing __rowid__ is not supported
-- Minimal Unicode/grapheme handling in edit input (byte-wise cursor movement)
-- No CSV export/copy-to-clipboard yet
+## Roadmap
+- PK/unique‑key aware edits (support for WITHOUT ROWID/composite keys)
+- Basic schema viewer and safe schema operations
+- Query console tab and richer export formats (TSV/JSON scopes)
+- Additional clipboard and export integrations
 
-Minimal roadmap
-- Filtering and sorting: WHERE and ORDER BY per table, quick find
-- Query console tab: run arbitrary SQL, view results
-- Primary key-aware edits for tables without rowid
-- Better type/affinity handling and NULL entry shortcut
-- Column sizing, freezing, and hiding; wider text rendering
-- Large-table performance improvements: streaming rows, optional COUNT
-- Export: copy selection, CSV export
-- Schema operations: safe ALTER TABLE flows
-- Undo/redo via transactions; optional “save changes” mode
+## Credits
+- Built with:
+  - [ratatui](https://github.com/ratatui-org/ratatui)
+  - [crossterm](https://github.com/crossterm-rs/crossterm)
+  - [rusqlite](https://github.com/rusqlite/rusqlite)
+- Clipboard helpers: tries common system tools (wl-copy, xclip, xsel, pbcopy, clip).
+- Thanks to the Rust and TUI communities for inspiration and examples.
 
-Troubleshooting
-- “unexpected argument ‘--/path…’”: remove the leading dashes from the DB path, or use “--” to end option parsing
-- Terminal too small: increase window size; the table view needs reasonable width
-
-Contributing
-Open issues or PRs for bugs, feature requests, and improvements. Small focused changes are welcome.
+## License
+MIT — see [LICENSE](LICENSE).
