@@ -1,97 +1,134 @@
 
-Core integration
-- Custom editor for SQLite files: opens .db, .sqlite, .sqlite3 with a single click in VSCode.
-- Webview UI retained when hidden; supports multiple editors per document.
-- Works in untrusted workspaces; virtual workspaces disabled.
-- Git diff: unsupported in-webview; shows a textconv command hint for proper diffs.
+Feature implementation (Rust TUI)
 
-Database connectivity/runtime
-- Uses a bundled Python server (`vscode/server.py`) launched by the extension.
-- Auto-detects Python (configurable with `sqlite3-editor.pythonPath`), requiring Python >= 3.6 and SQLite >= 3.8.
-- Falls back for SQLite < 3.37.0 (no `PRAGMA table_list`): still lists tables and disables STRICT appropriately.
-- Separate read-only/read-write connections with safe integer handling and a custom `find_widget_regexp` SQL function.
+This document describes the features implemented in the Rust-based terminal UI (TUI) SQLite editor (sqlite-editor), which uses ratatui for rendering, crossterm for input, and rusqlite for database access. It supersedes the VSCode/webview feature list and reflects the current TUI codebase.
 
-Spreadsheet-like table viewer
-- Virtualized reading of table data with LIMIT/OFFSET; custom vertical scrollbar.
-- Adjustable visible row count by dragging a bottom handle (min 1, max 200).
-- Column header actions:
-  - Resize column widths by dragging; persisted per-table.
-  - Context menu: Rename…, Delete…, Add Column…, Hide, Copy Column Name.
-  - Header shows: type, NOT NULL, DEFAULT, PRIMARY KEY/AUTOINCREMENT, and inline REFERENCES info for foreign keys.
-- Cell/row context menus:
-  - Cell: Update, Copy Text, Copy JSON, Copy SQL literal.
-  - Row gutter: Delete…, Copy Row Number, Copy Rowid.
-- Cell rendering:
-  - Type coloring for numbers/strings/nulls.
-  - BLOBs: hex preview; auto-preview image/audio/video blobs inline when file type is recognized.
-  - Preserves 64-bit integers as BigInt when appropriate.
-- Visible columns editor:
-  - Dialog to toggle which columns are shown in SELECT; enforces at least one column.
+Core/runtime integration
+- CLI TUI application written in Rust (no VSCode/webview).
+- Rendering/input: ratatui + crossterm.
+- Database: rusqlite.
+- Asynchronous DB worker thread:
+  - UI sends requests via crossbeam_channel to a background worker.
+  - Worker responds with schema/data/ack messages; UI remains responsive.
+- PRAGMA tuning at startup:
+  - journal_mode = WAL
+  - synchronous = NORMAL
+- CLI options:
+  - DB path (positional)
+  - Page size: -n/--page-size (default 200)
 
-Find/search (filtering)
-- “Find” widget that filters all rows across all columns via SQL WHERE:
-  - Options: case-sensitive, whole-word, regex (implemented with `find_widget_regexp`).
-  - Keyboard: Ctrl+F toggles find; Alt+C/W/R toggle case/whole/regex; Escape closes.
-- Works alongside custom row count and virtualized paging.
+Database connectivity and types
+- Uses a single rusqlite Connection in the worker.
+- Tables are listed from sqlite_master (non-internal tables only).
+- Data loads are paginated (LIMIT/OFFSET).
+- The first column in the viewer is always the rowid exposed as "__rowid__".
+- Type rendering (to strings):
+  - NULL -> "NULL"
+  - INTEGER -> stringified i64
+  - REAL -> stringified f64
+  - TEXT -> UTF-8 lossily decoded String
+  - BLOB -> hex as 0x…
+- Updates use simple type inference:
+  - Try integer, then real, else text
+  - No explicit NULL literal shortcut yet
 
-Editing (SQL operations with UI)
-- UPDATE (in-place cell editing):
-  - Inline textarea overlay; type selector: TEXT, NUMERIC, BLOB, NULL, DEFAULT.
-  - BLOB import/export per cell from/to files.
-  - WHERE clause selector picks from rowid and unique constraints (PK/UNIQUE) detected from indexes.
-  - Keyboard navigation: arrows, PageUp/Down, Home/End, Ctrl+arrows; Tab/Shift+Tab; Enter variants.
-  - Commit with Ctrl+Enter; confirmation dialog on unsaved changes; Escape to cancel as context allows.
-- INSERT:
-  - Editor per column with type selector and default handling; BLOB import/export support.
-  - Inserts DEFAULT VALUES when all columns use DEFAULT.
-  - Scrolls to bottom after insert.
-- DELETE:
-  - Row delete (gutter click or context menu) with WHERE built from chosen unique selector.
-- ALTER TABLE:
-  - RENAME TO, RENAME COLUMN, ADD COLUMN (full column builder), DROP COLUMN.
-  - Column builder supports: affinity (TEXT/NUMERIC/INTEGER/REAL/BLOB/ANY with STRICT awareness), PRIMARY KEY, AUTOINCREMENT, UNIQUE, NOT NULL, DEFAULT (expression).
-- CREATE TABLE:
-  - Multi-column builder; table constraints textarea (e.g., FOREIGN KEY …); STRICT and WITHOUT ROWID toggles.
-- DROP TABLE / DROP VIEW.
-- CREATE INDEX:
-  - UNIQUE option, column list, optional WHERE (partial indexes).
-- DROP INDEX.
+Table browsing and pagination
+- Left pane: list of tables (highlight moves with Up/Down).
+- Right pane: data grid for the selected table.
+- Pagination:
+  - Enter: load selected table (page 1)
+  - PageDown/PageUp: next/previous page
+  - Best-effort total row count displayed (COUNT(*) may be expensive on very large tables)
+- Selection in data grid:
+  - Move column: Left/Right
+  - Move row: Up/Down or j/k
+- Column widths are evenly distributed per available width (no resizing yet).
 
-Schema and indexes view
-- Syntax-highlighted table schema (Prism).
-- Index list with details:
-  - Shows `CREATE INDEX` SQL if available; otherwise prints columns/rowid/expression.
-  - Drop index action.
+Editing (rowid-based)
+- Inline cell editing for rowid-backed tables.
+- Start editing: e (on selected cell)
+- Edit buffer (single-line) with simple cursor ops:
+  - Arrow Left/Right, Home/End, Backspace/Delete
+- Save changes: Enter
+  - Executes: UPDATE "table" SET "col" = ? WHERE rowid = ?
+  - Editing __rowid__ itself is not supported
+- Cancel editing: Esc
+- Status line reflects progress/results/errors.
+- Limitations:
+  - Requires a rowid-backed table (WITHOUT ROWID currently not supported).
+  - No composite primary key updates.
+  - No per-cell type selector; only numeric parsing followed by text fallback.
+  - No NULL entry shortcut yet (empty string is text by default).
 
-Custom viewer query
-- Toggle a “Custom” mode to supply any SELECT subquery for the viewer header.
-- Still supports column/record rendering and find, but schema/index/edit operations are appropriately limited when not bound to a single base table.
+Status and messaging
+- Bottom status line shows:
+  - Current mode: NORMAL/EDIT
+  - Contextual messages: loading, page info, update status, errors
+  - In edit mode, echoes the current buffer content
 
-Auto reload
-- Watches the database file and its -wal; notifies/reloads on external changes.
-- “Auto reload” toggle.
-- Periodic check that reloads all tables when changes are detected.
+Keyboard shortcuts
 
-Other tools (integrated terminal helpers)
-- Opens an integrated “SQLite3 Editor” terminal and types prepared commands; auto-installs `sqlite-utils` via pip if missing:
-  - Check journal mode (view).
-  - Enable WAL mode.
-  - Import table from JSON or CSV via sqlite-utils; import from SQL via `sqlite3` CLI.
-  - Export table to JSON/CSV via sqlite-utils; export DB to SQL via `sqlite3 .dump`.
-  - Copy table via sqlite-utils.
-- Placeholders `{{pythonPath}}` and `{{databasePath}}` are expanded automatically.
+Normal mode
+- q: Quit
+- r: Reload current table
+- Tables (left pane):
+  - Up/Down: Move selection
+  - Enter: Load selected table (page 1)
+- Data (right pane):
+  - Left/Right: Move column
+  - Up/Down or j/k: Move row
+  - PageUp/PageDown: Previous/Next page
+  - e: Edit current cell
+
+Editing mode
+- Enter: Save change
+- Esc: Cancel edit
+- Backspace/Delete: Delete char
+- Left/Right: Move cursor
+- Home/End: Move to start/end of buffer
+- Any printable character: insert into buffer
+
+Error handling and resilience
+- Errors from the DB worker are propagated to the status line.
+- UI keeps running on errors.
+- Worker attempts to open the DB at startup and reports a failure via an error response.
 
 Persistence and settings
-- Remembers last selected table, visible row count, UI toggles/state using VSCode `workspaceState`.
-- VSCode setting: `sqlite3-editor.pythonPath` to force a specific Python interpreter.
+- No on-disk persistence of UI state yet.
+- Page size is a CLI argument (not persisted).
+- UI state is held in memory only.
 
-Error handling and UX niceties
-- Error panel with details (query/params on SQL errors).
-- Inline invalid query message for viewer when a SELECT is invalid.
-- Unsaved changes confirmation dialog with Commit/Discard/Cancel.
-- In-webview undo/redo fix for VSCode: Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) on inputs.
+Not implemented yet (planned)
+- Filtering/search:
+  - WHERE filtering and quick-find across columns
+  - ORDER BY sorting
+- Query console:
+  - Run arbitrary SQL and view results
+- Primary-key aware edits (without-rowid / composite PK support)
+- Type/affinity-aware editing and explicit NULL shortcut
+- Column sizing, freezing, and hiding; improved rendering for long text
+- Large-table performance improvements (streaming rows; optional COUNT)
+- Export/copy:
+  - Copy selection
+  - CSV export
+- Schema operations:
+  - ALTER TABLE helpers (add/rename/drop columns)
+  - Index operations (create/drop)
+  - Schema/Index viewer
+- Undo/redo via transactions; optional “save changes” mode
+- File watching/auto reload
 
-Keyboard shortcuts (highlights)
-- Ctrl+Enter: commit.
-- Ctrl+F: open find widget; Alt+C/W/R toggle find options.
-- Rich navigation/selection shortcuts in UPDATE mode (arrows, PageUp/Down, Home/End, Tab, Shift+Tab, Enter variants, Escape).
+Implementation notes (mapping to source)
+- src/main.rs
+  - CLI parsing, terminal setup, event loop and key handling
+  - AppMode Normal/Editing routing
+- src/app.rs
+  - App state (tables, columns, rows, selection, edit buffer, paging)
+  - High-level actions (load schema/table, navigation, editing flow)
+- src/db.rs
+  - DB worker (rusqlite): schema listing, data page load, UPDATE logic
+  - Basic value parsing for UPDATE
+  - Row rendering to string
+- src/ui.rs
+  - ratatui layout: left table list, right data table, bottom status line
+  - Selection highlighting
