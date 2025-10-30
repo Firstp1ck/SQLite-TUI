@@ -145,10 +145,6 @@ impl App {
         };
     }
 
-
-
-
-
     pub fn handle_db_response(&mut self, resp: DBResponse) {
         match resp {
             DBResponse::Schema { tables } => {
@@ -179,9 +175,7 @@ impl App {
                     .visible_rows_per_page
                     .min(self.buffer_rows.len())
                     .max(1);
-                let mut view_start = self
-                    .global_row_offset
-                    .saturating_sub(self.buffer_offset);
+                let mut view_start = self.global_row_offset.saturating_sub(self.buffer_offset);
                 let max_start = self.buffer_rows.len().saturating_sub(cap);
                 if view_start > max_start {
                     view_start = max_start;
@@ -448,9 +442,11 @@ impl App {
         }
         // At bottom of visible window: try to scroll within current buffer first
         let buffer_end = self.buffer_offset.saturating_add(self.buffer_rows.len());
-        if self.global_row_offset
+        if self
+            .global_row_offset
             .saturating_add(self.sel_row)
-            .saturating_add(1) < buffer_end
+            .saturating_add(1)
+            < buffer_end
         {
             self.global_row_offset = self.global_row_offset.saturating_add(1);
             self.view_start = self.view_start.saturating_add(1);
@@ -494,12 +490,17 @@ impl App {
             self.status = "Editing __rowid__ is not supported".into();
             return;
         }
-        if let AppMode::Editing { row: erow, col: ecol, .. } = self.mode {
-            if erow == row && ecol == col {
-                // Already editing this cell; do not reset buffer or cursor
-                self.status = "Editing: Enter to save, Esc to cancel".into();
-                return;
-            }
+        if let AppMode::Editing {
+            row: erow,
+            col: ecol,
+            ..
+        } = self.mode
+            && erow == row
+            && ecol == col
+        {
+            // Already editing this cell; do not reset buffer or cursor
+            self.status = "Editing: Enter to save, Esc to cancel".into();
+            return;
         }
         // Capture a stable rowid for this edit session
         let rowid = self
@@ -761,8 +762,6 @@ impl App {
 
     // ===== Column width tiers (0 = narrow, 1 = normal, 2 = wide) =====
 
-
-
     /// Make the current column narrower by one tier.
     pub fn resize_current_column_narrower(&mut self) {
         if self.columns.is_empty() {
@@ -827,8 +826,6 @@ impl App {
             .and_then(|row| row.get(c))
             .map(|s| s.as_str())
     }
-
-
 }
 
 // Simplified grapheme stepping without unicode-segmentation:

@@ -284,7 +284,8 @@ fn run_app(
                             use crossterm::event::KeyCode::*;
                             // Mark dirty only for keys that affect the edit buffer/cursor/state
                             match key.code {
-                                Enter | Esc | Backspace | Delete | Left | Right | Home | End | Char(_) => {
+                                Enter | Esc | Backspace | Delete | Left | Right | Home | End
+                                | Char(_) => {
                                     dirty = true;
                                 }
                                 _ => {}
@@ -323,15 +324,17 @@ fn handle_key_normal(app: &mut App, code: KeyCode) -> bool {
             } else {
                 app.move_cell_up()
             }
-        },
+        }
         KeyCode::Down => {
             if app.focus == app::Focus::Tables {
                 app.move_table_selection_down()
             } else {
                 app.move_cell_down()
             }
-        },
-        KeyCode::Tab => { app.toggle_focus(); },
+        }
+        KeyCode::Tab => {
+            app.toggle_focus();
+        }
         KeyCode::Enter => app.load_selected_table_page(0),
         KeyCode::PageDown => app.next_page(),
         KeyCode::PageUp => app.prev_page(),

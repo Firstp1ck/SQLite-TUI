@@ -74,7 +74,9 @@ fn draw_help(f: &mut Frame, area: Rect, _app: &App) {
         Line::from(
             "Editing:       e Edit cell               | Enter Save   | Esc Cancel  | Ctrl-d Set NULL | u Undo last change",
         ),
-        Line::from("Filter:        / Begin filter  | Enter Apply  | Esc Clear (also in normal mode)"),
+        Line::from(
+            "Filter:        / Begin filter  | Enter Apply  | Esc Clear (also in normal mode)",
+        ),
         Line::from("Sorting:       s Cycle sort by column     | S Toggle direction"),
         Line::from("Copy:          c Copy cell | C Copy row | Ctrl+C Copy page (TSV)"),
         Line::from("Autosize:      a Autosize column | A Autosize all"),
@@ -94,25 +96,25 @@ fn draw_tables(f: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     // Visually indicate focus on the Tables pane by changing border color and title
-    let title = if app.focus == Focus::Tables { "Tables ◀" } else { "Tables" };
+    let title = if app.focus == Focus::Tables {
+        "Tables ◀"
+    } else {
+        "Tables"
+    };
     let block = if app.focus == Focus::Tables {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan))
             .title(title)
     } else {
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
+        Block::default().borders(Borders::ALL).title(title)
     };
 
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::Yellow),
-        );
+    let list = List::new(items).block(block).highlight_style(
+        Style::default()
+            .add_modifier(Modifier::BOLD)
+            .fg(Color::Yellow),
+    );
 
     f.render_stateful_widget(list, area, &mut list_state(app));
 }
@@ -169,7 +171,11 @@ fn draw_data(f: &mut Frame, area: Rect, app: &mut App) {
     } else {
         "Data".to_string()
     };
-    let title = if app.focus == Focus::Data { format!("{base_title} ◀") } else { base_title };
+    let title = if app.focus == Focus::Data {
+        format!("{base_title} ◀")
+    } else {
+        base_title
+    };
     let block = if app.focus == Focus::Data {
         Block::default()
             .borders(Borders::ALL)
@@ -222,9 +228,10 @@ fn draw_data(f: &mut Frame, area: Rect, app: &mut App) {
             app.autosize_all_request = false;
             app.autosize_col_request = None;
         } else if let Some(i) = app.autosize_col_request.take()
-            && i < cols {
-                app.col_abs_widths[i] = measure_column_width(app, i);
-            }
+            && i < cols
+        {
+            app.col_abs_widths[i] = measure_column_width(app, i);
+        }
     }
     // Table inside inner area
     let widths = column_widths(
@@ -244,7 +251,12 @@ fn draw_data(f: &mut Frame, area: Rect, app: &mut App) {
         let mut cells = Vec::with_capacity(row.len());
         for (c_idx, val) in row.iter().enumerate() {
             // Live editing view: render edit buffer with a visible cursor for the editing cell.
-            let mut cell = if let AppMode::Editing { row: erow, col: ecol, cursor } = app.mode {
+            let mut cell = if let AppMode::Editing {
+                row: erow,
+                col: ecol,
+                cursor,
+            } = app.mode
+            {
                 if r_idx == erow && c_idx == ecol {
                     let buf = app.edit_buffer.as_str();
                     let cur = cursor.min(buf.len());
@@ -259,7 +271,12 @@ fn draw_data(f: &mut Frame, area: Rect, app: &mut App) {
             };
 
             // Highlight selection, and use a distinct highlight for the editing cell.
-            if let AppMode::Editing { row: erow, col: ecol, .. } = app.mode {
+            if let AppMode::Editing {
+                row: erow,
+                col: ecol,
+                ..
+            } = app.mode
+            {
                 if r_idx == erow && c_idx == ecol {
                     cell = cell.style(Style::default().bg(Color::Yellow).fg(Color::Black));
                 } else if r_idx == app.sel_row && c_idx == app.sel_col {
@@ -328,8 +345,6 @@ fn column_widths(total_width: u16, cols: usize, tiers: &[u8], abs: &[u16]) -> Ve
         .map(|w| Constraint::Ratio(w, sum))
         .collect()
 }
-
-
 
 // Measure the width (in characters) required to fully display a column,
 // considering both header and current page rows. Adds small padding.

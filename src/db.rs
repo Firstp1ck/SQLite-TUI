@@ -1,9 +1,9 @@
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rusqlite::{Connection, Row, types::ValueRef};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SortDir {
@@ -101,7 +101,18 @@ pub fn start_db_worker(path: String, req_rx: Receiver<DBRequest>, resp_tx: Sende
                 filter,
                 sort_by,
                 sort_dir,
-            } => load_table(&conn, &table, page, page_size, offset_override, filter, sort_by, sort_dir),
+            } => {
+                let params = LoadTableParams {
+                    table,
+                    page,
+                    page_size,
+                    offset_override,
+                    filter,
+                    sort_by,
+                    sort_dir,
+                };
+                load_table(&conn, &params)
+            }
             DBRequest::UpdateCell {
                 table,
                 rowid,
@@ -139,16 +150,26 @@ fn load_schema(conn: &Connection) -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn load_table(
-    conn: &Connection,
-    table: &str,
+struct LoadTableParams {
+    table: String,
     page: usize,
     page_size: usize,
     offset_override: Option<usize>,
     filter: Option<String>,
     sort_by: Option<String>,
     sort_dir: Option<SortDir>,
-) -> Result<DBResponse> {
+}
+
+fn load_table(conn: &Connection, p: &LoadTableParams) -> Result<DBResponse> {
+    // unpack params
+    let table = p.table.as_str();
+    let page = p.page;
+    let page_size = p.page_size;
+    let offset_override = p.offset_override;
+    let filter = p.filter.clone();
+    let sort_by = p.sort_by.clone();
+    let sort_dir = p.sort_dir;
+
     // columns
     let mut col_stmt = conn.prepare(&format!("PRAGMA table_info({})", ident(table)))?;
     let mut columns: Vec<String> = vec!["__rowid__".to_string()];
@@ -405,7 +426,11 @@ fn update_cell(
 ) -> Result<DBResponse> {
     // Fetch previous value for history
     let prev_value: Option<String> = {
-        let sql = format!("SELECT {} FROM {} WHERE rowid = ?1", ident(column), ident(table));
+        let sql = format!(
+            "SELECT {} FROM {} WHERE rowid = ?1",
+            ident(column),
+            ident(table)
+        );
         let mut stmt_prev = conn.prepare(&sql)?;
         stmt_prev
             .query_row([rowid], |row| {
@@ -454,31 +479,31 @@ fn undo_last_change(
     history: &mut HashMap<String, Vec<Change>>,
     table: &str,
 ) -> Result<DBResponse> {
-    if let Some(stack) = history.get_mut(table) {
-        if let Some(change) = stack.pop() {
-            // Apply reverse update: set column back to previous value
-            let mut stmt = conn.prepare(&format!(
-                "UPDATE {} SET {} = ?1 WHERE rowid = ?2",
-                ident(&change.table),
-                ident(&change.column),
-            ))?;
-            let value_param = match change.prev_value {
-                None => rusqlite::types::Value::Null,
-                Some(ref s) => parse_value(s),
-            };
-            match stmt.execute((value_param, change.rowid)) {
-                Ok(_) => {
-                    return Ok(DBResponse::CellUpdated {
-                        ok: true,
-                        message: Some("Undo applied".into()),
-                    });
-                }
-                Err(e) => {
-                    return Ok(DBResponse::CellUpdated {
-                        ok: false,
-                        message: Some(format!("Undo failed: {}", e)),
-                    });
-                }
+    if let Some(stack) = history.get_mut(table)
+        && let Some(change) = stack.pop()
+    {
+        // Apply reverse update: set column back to previous value
+        let mut stmt = conn.prepare(&format!(
+            "UPDATE {} SET {} = ?1 WHERE rowid = ?2",
+            ident(&change.table),
+            ident(&change.column),
+        ))?;
+        let value_param = match change.prev_value {
+            None => rusqlite::types::Value::Null,
+            Some(ref s) => parse_value(s),
+        };
+        match stmt.execute((value_param, change.rowid)) {
+            Ok(_) => {
+                return Ok(DBResponse::CellUpdated {
+                    ok: true,
+                    message: Some("Undo applied".into()),
+                });
+            }
+            Err(e) => {
+                return Ok(DBResponse::CellUpdated {
+                    ok: false,
+                    message: Some(format!("Undo failed: {}", e)),
+                });
             }
         }
     }
