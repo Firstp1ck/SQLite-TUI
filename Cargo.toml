@@ -1,0 +1,12 @@
+[package]
+name = "sqlite-editor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.27"
+crossbeam-channel = "0.5"
+ratatui = "0.26"
+rusqlite = { version = "0.30", features = ["bundled"] } # remove "bundled" if you prefer system sqlite
